@@ -1,0 +1,87 @@
+name: Release macOS app
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch: # manual run: builds DMGs as workflow artifacts, no release
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15 # Apple Silicon
+            arch: arm64
+          - runner: macos-15-intel # Intel
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Bundle Python converter
+        run: ./scripts/build-python.sh
+
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Set app version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        working-directory: desktop
+        run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
+
+      - name: Build DMG
+        working-directory: desktop
+        run: npx electron-builder --mac dmg --${{ matrix.arch }} --publish never
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dmg-${{ matrix.arch }}
+          path: desktop/dist/*.dmg
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dmg-*
+          merge-multiple: true
+          path: dist
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.dmg
+          generate_release_notes: true
+          body: |
+            ## Download
+
+            - **Apple Silicon (M1 and later):** `Aliena-OFX-Converter-*-arm64.dmg`
+            - **Intel Macs:** `Aliena-OFX-Converter-*-x64.dmg`
+
+            ## First launch
+
+            The app is not signed with an Apple Developer ID, so macOS blocks it the first time. After dragging it to Applications, either:
+
+            - Try to open it, then go to **System Settings → Privacy & Security**, scroll down, and click **Open Anyway**; or
+            - Run in Terminal: `xattr -cr "/Applications/Aliena OFX Converter.app"`
+
+            You only need to do this once per downloaded version.

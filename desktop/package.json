@@ -1,0 +1,48 @@
+{
+  "name": "aliena-ofx-converter",
+  "productName": "Aliena OFX Converter",
+  "version": "1.0.0",
+  "description": "Convert Aliena/DriveWealth trade confirmation PDFs into OFX/QFX files for Quicken",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "build:python": "../scripts/build-python.sh",
+    "dist": "npm run build:python && electron-builder --mac dmg",
+    "icon": "electron scripts/render-icon.js"
+  },
+  "build": {
+    "appId": "local.aliena.ofx-converter",
+    "productName": "Aliena OFX Converter",
+    "artifactName": "Aliena-OFX-Converter-${version}-${arch}.${ext}",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../dist-python/aliena_pdf_to_ofx",
+        "to": "bin/aliena_pdf_to_ofx"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.finance",
+      "target": "dmg",
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "icon": "build/icon.png"
+    },
+    "dmg": {
+      "title": "Aliena OFX Converter ${version}"
+    },
+    "afterPack": "build-hooks/adhoc-sign.js"
+  },
+  "devDependencies": {
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3"
+  }
+}

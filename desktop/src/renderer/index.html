@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:"
+    />
+    <title>Aliena OFX Converter</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="titlebar">
+      <div class="brand">
+        <img class="logo" src="icon.png" alt="" />
+        <div>
+          <h1>Aliena OFX Converter</h1>
+          <p>Trade confirmations → Quicken-ready OFX / QFX</p>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section class="card">
+        <div class="card-head">
+          <h2>Confirmations</h2>
+          <div class="head-actions">
+            <span id="file-count" class="muted"></span>
+            <button id="clear-files" class="link" hidden>Clear</button>
+          </div>
+        </div>
+
+        <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Add confirmation PDFs">
+          <svg class="drop-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+            <path d="M14 3v5h5" />
+            <path d="M12 17v-6" />
+            <path d="M9 14l3-3 3 3" />
+          </svg>
+          <div class="drop-text">
+            <strong>Drop confirmation PDFs or a folder here</strong>
+            <span>or <u>choose files…</u></span>
+          </div>
+        </div>
+
+        <ul id="file-list" class="file-list"></ul>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><h2>Output</h2></div>
+
+        <div class="segmented" id="mode" role="radiogroup" aria-label="Output format">
+          <button role="radio" data-mode="quicken-investment">Quicken Investment</button>
+          <button role="radio" data-mode="quicken">Quicken</button>
+          <button role="radio" data-mode="ofx-2.3">OFX 2.3</button>
+          <button role="radio" data-mode="ofx-1.0.2">OFX 1.0.2</button>
+        </div>
+        <p id="mode-help" class="help"></p>
+
+        <div class="row">
+          <label>Save to</label>
+          <div class="path-field">
+            <span id="output-dir" class="path"></span>
+            <button id="pick-output" class="secondary">Change…</button>
+          </div>
+        </div>
+
+        <details class="advanced">
+          <summary>Advanced options</summary>
+          <div class="grid">
+            <label>Broker ID<input id="broker-id" placeholder="drivewealth.com" /></label>
+            <label>INTU.BID<input id="intu-bid" placeholder="(mode default)" /></label>
+            <label>FI / ORG<input id="fi-org" placeholder="(mode default)" /></label>
+            <label>FI / FID<input id="fi-fid" placeholder="(mode default)" /></label>
+          </div>
+          <label class="check">
+            <input type="checkbox" id="numeric-acctid" />
+            Numeric account ID <span class="muted">(always on in Quicken modes)</span>
+          </label>
+        </details>
+      </section>
+
+      <section id="results" class="card results" hidden>
+        <div class="card-head">
+          <h2 id="results-title">Results</h2>
+          <button id="open-output" class="link">Open folder</button>
+        </div>
+        <p id="results-summary" class="summary"></p>
+        <ul id="results-list" class="result-list"></ul>
+        <details id="log-wrap" class="log">
+          <summary>Details</summary>
+          <pre id="log"></pre>
+        </details>
+      </section>
+    </main>
+
+    <footer class="actionbar">
+      <span id="status" class="muted"></span>
+      <button id="convert" class="primary" disabled>
+        <span class="spinner" aria-hidden="true"></span>
+        <span class="label">Convert</span>
+      </button>
+    </footer>
+
+    <script src="renderer.js"></script>
+  </body>
+</html>

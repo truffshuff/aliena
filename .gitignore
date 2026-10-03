@@ -1,0 +1,34 @@
+# --- Personal financial data: never commit ---
+# Trade confirmation PDFs (any folder, any name)
+*.pdf
+*.PDF
+# Archived confirmation folders
+Old/
+2SEP/
+# Converter output (contains account numbers and trades)
+*.ofx
+*.qfx
+*.OFX
+*.QFX
+ofx_output/
+ofx-output/
+# Local OFX spec/reference downloads
+OFX/
+
+# --- Python ---
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# --- Build output ---
+dist-python/
+build-python/
+desktop/node_modules/
+desktop/dist/
+node_modules/
+
+# --- OS / editor ---
+.DS_Store
+.vscode/
+.idea/
