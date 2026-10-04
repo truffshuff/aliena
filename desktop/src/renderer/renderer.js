@@ -241,6 +241,62 @@ function showResults(result) {
   section.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
+// ---------- Updates ----------
+let updateStatus = null;
+
+function renderUpdate(status) {
+  updateStatus = status;
+  const banner = $("update-banner");
+  if (!status) {
+    banner.hidden = true;
+    return;
+  }
+  const { state, version, currentVersion, hasAsset, blocker } = status;
+  const canInstall = hasAsset && !blocker;
+  const busy = state === "downloading" || state === "installing";
+  const titles = {
+    available: `Version ${version} is available`,
+    downloading: `Downloading version ${version}…`,
+    installing: `Installing version ${version}…`,
+    error: "Update failed",
+  };
+  let detail = `You have ${currentVersion}.`;
+  if (state === "installing") detail = "The app will restart in a moment.";
+  else if (state === "downloading") detail = `${status.progress || 0}%`;
+  else if (state === "error") detail = status.message;
+  else if (blocker) detail = blocker;
+  else if (!hasAsset) detail = "Download it from GitHub to update.";
+
+  banner.hidden = false;
+  banner.classList.toggle("err", state === "error");
+  $("update-title").textContent = titles[state];
+  $("update-detail").textContent = detail;
+
+  const progress = $("update-progress");
+  progress.hidden = !busy;
+  progress.classList.toggle("indeterminate", state === "installing");
+  $("update-bar").style.width = state === "downloading" ? `${status.progress || 0}%` : "";
+
+  const install = $("update-install");
+  install.hidden = busy || (!canInstall && hasAsset);
+  install.querySelector(".label").textContent = !hasAsset
+    ? "Download"
+    : state === "error"
+      ? "Try Again"
+      : "Install & Restart";
+  $("update-notes").hidden = busy;
+  $("update-notes").textContent = state === "error" || blocker ? "Download manually" : "What's new";
+  $("update-dismiss").hidden = busy;
+}
+
+$("update-install").addEventListener("click", () => {
+  if (updateStatus?.hasAsset) api.installUpdate();
+  else api.openRelease();
+});
+$("update-notes").addEventListener("click", () => api.openRelease());
+$("update-dismiss").addEventListener("click", () => ($("update-banner").hidden = true));
+api.onUpdateStatus(renderUpdate);
+
 // ---------- Init ----------
 (async function init() {
   const saved = loadSettings();
@@ -254,4 +310,5 @@ function showResults(result) {
   renderMode();
   renderOutputDir();
   renderFiles();
+  renderUpdate(await api.updateStatus());
 })();

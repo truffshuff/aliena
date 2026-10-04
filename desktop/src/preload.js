@@ -9,4 +9,8 @@ contextBridge.exposeInMainWorld("aliena", {
   convert: (payload) => ipcRenderer.invoke("convert", payload),
   reveal: (target) => ipcRenderer.invoke("reveal", target),
   openPath: (target) => ipcRenderer.invoke("open-path", target),
+  updateStatus: () => ipcRenderer.invoke("update-status"),
+  installUpdate: () => ipcRenderer.invoke("update-install"),
+  openRelease: () => ipcRenderer.invoke("update-open-release"),
+  onUpdateStatus: (callback) => ipcRenderer.on("update-status", (_event, status) => callback(status)),
 });

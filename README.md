@@ -8,14 +8,12 @@ Use it as a **Mac desktop app** (drag in PDFs, click Convert) or as a **command-
 
 ### Install
 
-1. Download the latest `.dmg` from this repo's **Releases** page:
-   - Apple Silicon (M1 and later): `Aliena-OFX-Converter-<version>-arm64.dmg`
-   - Intel Macs: `Aliena-OFX-Converter-<version>-x64.dmg`
+1. Download `Aliena-OFX-Converter-<version>-arm64.dmg` from this repo's **Releases** page. Apple Silicon Macs only (M1 and later).
 2. Open the DMG and drag **Aliena OFX Converter** into **Applications**.
 
 ### First launch: getting past Gatekeeper
 
-The app is not signed with an Apple Developer ID, so macOS blocks it the first time you open it. Use **either** of these once per downloaded version:
+The app is not signed with an Apple Developer ID, so macOS blocks it the first time you open it. Use **either** of these once. In-app updates don't trigger it again:
 
 **Option A: Privacy & Security**
 
@@ -41,7 +39,21 @@ This removes the "downloaded from the internet" quarantine flag, after which the
 
 **Advanced options** exposes the same overrides as the CLI flags below (Broker ID, INTU.BID, FI/ORG, FI/FID, numeric account ID). Your choices are remembered between launches.
 
-The app runs entirely offline. The PDFs never leave your Mac.
+The PDFs never leave your Mac. The only network request is the update check.
+
+### Updates
+
+The app checks this repo's latest GitHub release at launch and every 6 hours. You can also check any time with **Aliena OFX Converter → Check for Updates…**. When a newer version is out, a banner offers **Install & Restart**, which:
+
+1. Downloads the release's `-arm64.zip`.
+2. Verifies its SHA-256 checksum against GitHub's and checks its code signature.
+3. Replaces the app and relaunches it.
+
+The app has to be in a folder you can write to (normally `/Applications`). If you run it straight from the DMG or Downloads, the banner asks you to move it first.
+
+If an update can't be installed, you'll see a message on the next launch. Usually macOS blocked the app from replacing itself. Turn on **Aliena OFX Converter** under **System Settings → Privacy & Security → App Management**, or download the DMG and drag the app into Applications.
+
+> Electron's standard updater (Squirrel.Mac) only works with Developer ID–signed apps, so this app uses its own updater ([desktop/src/updater.js](desktop/src/updater.js)).
 
 ## Command line
 
@@ -116,7 +128,8 @@ Parsed 83 trades across 2 account(s).
 aliena_pdf_to_ofx.py        Converter (CLI and the engine behind the app)
 scripts/build-python.sh     Bundles the converter into a standalone binary (PyInstaller)
 desktop/                    Electron app
-  src/main.js               Window, file dialogs, runs the converter
+  src/main.js               Window, menu, file dialogs, runs the converter
+  src/updater.js            Self-updater driven by GitHub Releases
   src/preload.js            Safe bridge between UI and main process
   src/renderer/             UI (HTML/CSS/JS)
   build-hooks/adhoc-sign.js Ad-hoc code signing (no Developer ID needed)
@@ -145,21 +158,23 @@ cd desktop
 npm run dist   # bundles the Python converter, then builds dist/*.dmg
 ```
 
-The DMG is built for your Mac's architecture.
+This builds the DMG and the update ZIP for Apple Silicon.
 
 > **Repo inside iCloud Drive (e.g. `~/Documents` with Desktop & Documents sync)?** iCloud adds Finder metadata that breaks code signing (`resource fork, Finder information, or similar detritus not allowed`). Build to a folder outside iCloud instead:
 > `npm run dist -- --config.directories.output=/tmp/aliena-dist`
 
 ### Publish a release
 
-Releases are built by GitHub Actions on Apple Silicon and Intel runners.
+Releases are built by GitHub Actions on an Apple Silicon runner.
 
 ```bash
 git tag v1.0.1
 git push origin v1.0.1
 ```
 
-The workflow sets the app version from the tag, builds both DMGs, and attaches them to a new GitHub release with the first-launch instructions above. You can also run it manually from the Actions tab (**Release macOS app → Run workflow**) to get the DMGs as downloadable artifacts without creating a release.
+The workflow sets the app version from the tag, builds the DMG and the update ZIP, and attaches both to a new GitHub release with the first-launch instructions above. Installed apps then pick up the release through the in-app updater. Always increase the version number; the updater only installs releases newer than the running app.
+
+To test the updater against a local fake release, set `ALIENA_UPDATE_URL` to a JSON file shaped like GitHub's `releases/latest` response. With it set, update checks also run from `npm start`, though installing only works in the packaged app. You can also run it manually from the Actions tab (**Release macOS app → Run workflow**) to get the DMGs as downloadable artifacts without creating a release.
 
 ## Privacy
 

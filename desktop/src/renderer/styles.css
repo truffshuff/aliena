@@ -43,6 +43,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   height: 100%;
@@ -448,6 +452,92 @@ details summary:hover {
   max-height: 180px;
   overflow: auto;
   user-select: text;
+}
+
+/* ---------- Update banner ---------- */
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  border: 1px solid rgba(47, 109, 246, 0.25);
+}
+
+.update-banner.err {
+  background: var(--danger-soft);
+  border-color: rgba(217, 58, 58, 0.3);
+}
+
+.update-icon {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.update-banner.err .update-icon {
+  stroke: var(--danger);
+}
+
+.update-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.update-text span {
+  color: var(--muted);
+  user-select: text;
+}
+
+.update-progress {
+  height: 5px;
+  margin-top: 6px;
+  border-radius: 3px;
+  background: rgba(127, 127, 127, 0.2);
+  overflow: hidden;
+}
+
+.update-progress div {
+  height: 100%;
+  width: 0;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 0.2s;
+}
+
+.update-progress.indeterminate div {
+  width: 35%;
+  animation: slide 1.1s ease-in-out infinite;
+}
+
+@keyframes slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+
+.update-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+}
+
+.primary.small {
+  padding: 5px 14px;
+  font-size: 12px;
 }
 
 /* ---------- Action bar ---------- */

@@ -1,7 +1,8 @@
-const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require("electron");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
+const updater = require("./updater");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 
@@ -13,6 +14,31 @@ function converterCommand() {
   const venvPython = path.join(REPO_ROOT, ".venv", "bin", "python");
   const python = fs.existsSync(venvPython) ? venvPython : "python3";
   return { cmd: python, pre: [path.join(REPO_ROOT, "aliena_pdf_to_ofx.py")] };
+}
+
+function buildMenu() {
+  const template = [
+    {
+      label: app.name,
+      submenu: [
+        { role: "about" },
+        { label: "Check for Updates…", click: () => updater.checkForUpdates({ manual: true }) },
+        { type: "separator" },
+        { role: "services" },
+        { type: "separator" },
+        { role: "hide" },
+        { role: "hideOthers" },
+        { role: "unhide" },
+        { type: "separator" },
+        { role: "quit" },
+      ],
+    },
+    { role: "fileMenu" },
+    { role: "editMenu" },
+    { role: "viewMenu" },
+    { role: "windowMenu" },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
 function createWindow() {
@@ -85,6 +111,10 @@ ipcMain.handle("default-output-dir", () =>
 ipcMain.handle("reveal", (_event, target) => shell.showItemInFolder(target));
 ipcMain.handle("open-path", (_event, target) => shell.openPath(target));
 
+ipcMain.handle("update-status", () => updater.currentStatus());
+ipcMain.handle("update-install", () => updater.installUpdate());
+ipcMain.handle("update-open-release", () => updater.openReleasePage());
+
 ipcMain.handle("convert", (_event, { pdfs, outputDir, options }) => {
   const args = ["--output-dir", outputDir];
   if (options.mode === "quicken-investment") args.push("--quicken-investment-mode");
@@ -127,7 +157,9 @@ app.whenReady().then(() => {
   if (!app.isPackaged && process.platform === "darwin") {
     app.dock.setIcon(path.join(__dirname, "..", "build", "icon.png"));
   }
+  buildMenu();
   createWindow();
+  updater.startUpdater();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });

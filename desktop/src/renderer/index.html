@@ -21,6 +21,24 @@
     </header>
 
     <main>
+      <div id="update-banner" class="update-banner" hidden>
+        <svg class="update-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 16V8" />
+          <path d="M8.5 11.5L12 8l3.5 3.5" />
+        </svg>
+        <div class="update-text">
+          <strong id="update-title"></strong>
+          <span id="update-detail"></span>
+          <div id="update-progress" class="update-progress" hidden><div id="update-bar"></div></div>
+        </div>
+        <div class="update-actions">
+          <button id="update-notes" class="link">What's new</button>
+          <button id="update-install" class="primary small"><span class="label">Install &amp; Restart</span></button>
+          <button id="update-dismiss" class="remove" title="Later" aria-label="Dismiss">×</button>
+        </div>
+      </div>
+
       <section class="card">
         <div class="card-head">
           <h2>Confirmations</h2>

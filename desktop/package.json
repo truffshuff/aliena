@@ -8,7 +8,7 @@
   "scripts": {
     "start": "electron .",
     "build:python": "../scripts/build-python.sh",
-    "dist": "npm run build:python && electron-builder --mac dmg",
+    "dist": "npm run build:python && electron-builder --mac",
     "icon": "electron scripts/render-icon.js"
   },
   "build": {
@@ -30,7 +30,20 @@
     ],
     "mac": {
       "category": "public.app-category.finance",
-      "target": "dmg",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
       "identity": null,
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
