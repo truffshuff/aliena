@@ -109,24 +109,17 @@ ipcMain.handle("default-output-dir", () =>
 );
 
 ipcMain.handle("reveal", (_event, target) => shell.showItemInFolder(target));
-ipcMain.handle("open-path", (_event, target) => shell.openPath(target));
+ipcMain.handle("open-path", (_event, target) => {
+  const ok = target.toLowerCase().endsWith(".pdf") || fs.statSync(target, { throwIfNoEntry: false })?.isDirectory();
+  return ok ? shell.openPath(target) : "Not allowed";
+});
 
 ipcMain.handle("update-status", () => updater.currentStatus());
 ipcMain.handle("update-install", () => updater.installUpdate());
 ipcMain.handle("update-open-release", () => updater.openReleasePage());
 
-ipcMain.handle("convert", (_event, { pdfs, outputDir, options }) => {
-  const args = ["--output-dir", outputDir];
-  if (options.mode === "quicken-investment") args.push("--quicken-investment-mode");
-  else if (options.mode === "quicken") args.push("--quicken-mode");
-  else args.push("--ofx-version", options.mode === "ofx-1.0.2" ? "1.0.2" : "2.3");
-  if (options.brokerId) args.push("--broker-id", options.brokerId);
-  if (options.intuBid) args.push("--intu-bid", options.intuBid);
-  if (options.fiOrg) args.push("--fi-org", options.fiOrg);
-  if (options.fiFid) args.push("--fi-fid", options.fiFid);
-  if (options.numericAcctId) args.push("--numeric-acctid");
-  args.push("--", ...pdfs);
-
+ipcMain.handle("convert", (_event, { pdfs, outputDir, format }) => {
+  const args = ["--output-dir", outputDir, "--format", format, "--json", "--", ...pdfs];
   const { cmd, pre } = converterCommand();
   return new Promise((resolve) => {
     let stdout = "";
@@ -134,21 +127,21 @@ ipcMain.handle("convert", (_event, { pdfs, outputDir, options }) => {
     const child = spawn(cmd, [...pre, ...args]);
     child.stdout.on("data", (d) => (stdout += d));
     child.stderr.on("data", (d) => (stderr += d));
-    child.on("error", (err) => resolve({ ok: false, error: err.message, stdout, stderr }));
+    child.on("error", (err) => resolve({ ok: false, error: err.message, stderr }));
     child.on("close", (code) => {
-      const files = [...stdout.matchAll(/^Wrote (.+) \((\d+) trades\)$/gm)].map((m) => ({
-        path: m[1],
-        trades: Number(m[2]),
-      }));
-      const summary = (stdout.match(/^Parsed .+$/m) || [""])[0];
-      resolve({
-        ok: code === 0,
-        error: code === 0 ? null : stderr.trim().split("\n").pop() || `Exited with code ${code}`,
-        files,
-        summary,
-        stdout,
-        stderr,
-      });
+      if (code !== 0) {
+        resolve({
+          ok: false,
+          error: stderr.trim().split("\n").pop() || `Exited with code ${code}`,
+          stderr,
+        });
+        return;
+      }
+      try {
+        resolve({ ok: true, ...JSON.parse(stdout) });
+      } catch {
+        resolve({ ok: false, error: "Converter returned unexpected output.", stderr: stdout + stderr });
+      }
     });
   });
 });

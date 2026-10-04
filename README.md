@@ -1,6 +1,6 @@
 # Aliena PDF to OFX Converter
 
-Converts Aliena/DriveWealth confirmation PDFs into OFX investment statement files (one file per account) for import into Quicken.
+Converts Aliena/DriveWealth confirmation PDFs into Quicken investment Web Connect files (one per account). Output is QFX by default, OFX, or both.
 
 Use it as a **Mac desktop app** (drag in PDFs, click Convert) or as a **command-line script**.
 
@@ -32,12 +32,17 @@ This removes the "downloaded from the internet" quarantine flag, after which the
 
 ### Using the app
 
-1. Drop confirmation PDFs (or a folder of them) onto the window, or click to choose files.
-2. Pick an output format. **Quicken Investment** is the recommended default.
+1. Drop confirmation PDFs (or a folder of them) onto the window, or click to choose files. Click a file name to open it in Preview.
+2. Pick the format: **QFX** (default), **OFX**, or **Both**.
 3. Choose where to save (defaults to `~/Documents/Aliena OFX`).
-4. Click **Convert**. Each output file is listed with its trade count and a **Show in Finder** button.
+4. Click **Convert**.
 
-**Advanced options** exposes the same overrides as the CLI flags below (Broker ID, INTU.BID, FI/ORG, FI/FID, numeric account ID). Your choices are remembered between launches.
+Each account you convert appears in the **Done** list, newest first. Each item shows:
+- its trade count;
+- the files written, each with **Show in Finder**;
+- the source confirmation PDFs it came from. Click one to open it in Preview.
+
+Remove an item with its **×**, or clear the list with **Clear**. This only tidies the list; it never deletes files. The format and output folder are remembered between launches.
 
 The PDFs never leave your Mac. The only network request is the update check.
 
@@ -77,48 +82,39 @@ Or pass specific PDF files instead of a folder/glob:
 python aliena_pdf_to_ofx.py --output-dir ofx_output Confirm_A.pdf Confirm_B.pdf
 ```
 
-Force legacy OFX 1.0.2 SGML output:
+Choose the output type with `--format` (`qfx` is the default):
 
 ```bash
-python aliena_pdf_to_ofx.py --input-dir . --glob "Confirm_*.pdf" --output-dir ofx_output --ofx-version 1.0.2
+python aliena_pdf_to_ofx.py --output-dir ofx_output --format both
 ```
 
-Quicken-focused compatibility mode (recommended if Web Connect import fails):
+| `--format` | Writes per account |
+|---|---|
+| `qfx` (default) | `.qfx` |
+| `ofx` | `.ofx` |
+| `both` | `.qfx` and `.ofx` |
 
-```bash
-python aliena_pdf_to_ofx.py --input-dir . --glob "Confirm_*.pdf" --output-dir ofx-output --quicken-mode
-```
-
-This mode does three things:
-- Forces OFX 1.0.2 SGML output.
-- Leaves `INTU.BID` out unless you explicitly pass `--intu-bid`.
-- Writes both `.ofx` and `.qfx` files per account.
-
-Quicken investment-profile mode (recommended for repeated investment updates):
-
-```bash
-python aliena_pdf_to_ofx.py --input-dir . --glob "Confirm_*.pdf" --output-dir ofx-output --quicken-investment-mode
-```
-
-This preset forces OFX 1.0.2, writes both `.ofx` and `.qfx`, and applies `INTU.BID=9999`, `FI/ORG=Intuit`, `FI/FID=9999`.
-
-All output filenames include a run timestamp suffix (`YYYYMMDD_HHMMSS`) so each run produces uniquely named files.
-
-Expected output example:
+Output filenames include a run timestamp (`YYYYMMDD_HHMMSS`), so each run produces new files:
 
 ```text
-Wrote ofx_output/ALIN-001-XXXX000001_20260804_210255.ofx (15 trades)
-Wrote ofx_output/ALIN-001-XXXX000002_20260804_210255.ofx (68 trades)
+Wrote ofx_output/ALIN-001-XXXX000001_20260804_210255.qfx (15 trades)
+Wrote ofx_output/ALIN-001-XXXX000002_20260804_210255.qfx (68 trades)
 Parsed 83 trades across 2 account(s).
 ```
 
-### Notes
+`--json` prints a machine-readable summary instead (the desktop app uses this).
+
+### Output details
+
+Files use Quicken's investment Web Connect profile:
+- OFX 1.0.2 SGML.
+- `INTU.BID=9999`, `FI/ORG=Intuit`, `FI/FID=9999`, `BROKERID=drivewealth.com`.
+- A numeric account ID.
+
+The `.qfx` and `.ofx` files have identical content; only the extension differs.
 
 - The script reads only page 1 of each confirmation, where trade rows live.
-- OFX transaction IDs (`FITID`) are deterministic and based on account, file, symbol, date, and quantity.
-- `BROKERID` defaults to `drivewealth.com`; override with `--broker-id` if your Quicken setup prefers a different value.
-- `--ofx-version` supports `2.3` (default XML) and `1.0.2` (legacy SGML).
-- Override Intuit BID header with `--intu-bid` if needed.
+- Transaction IDs (`FITID`) are deterministic and based on account, file, symbol, date, and quantity.
 
 ## Development
 

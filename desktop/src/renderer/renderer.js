@@ -1,20 +1,20 @@
 const api = window.aliena;
 const $ = (id) => document.getElementById(id);
 
-const MODE_HELP = {
-  "quicken-investment":
-    "Recommended. OFX 1.0.2 plus a .qfx copy, with Intuit BID/FI presets for repeated investment updates.",
-  quicken: "OFX 1.0.2 plus a .qfx copy. Try this if Web Connect import fails in Investment mode.",
-  "ofx-2.3": "Standard OFX 2.3 XML (.ofx only).",
-  "ofx-1.0.2": "Legacy OFX 1.0.2 SGML (.ofx only).",
+const FORMAT_HELP = {
+  qfx: "One .qfx file per account. Double-click it to import into Quicken.",
+  ofx: "One .ofx file per account. Same content, for apps other than Quicken.",
+  both: "A .qfx and an .ofx file per account.",
 };
 
 const SETTINGS_KEY = "aliena-settings";
 const state = {
   pdfs: [],
   outputDir: "",
-  mode: "quicken-investment",
+  format: "qfx",
+  done: [], // newest first: { id, account, trades, files, sources, at }
 };
+let nextDoneId = 1;
 
 // ---------- Settings persistence (best-effort) ----------
 function loadSettings() {
@@ -29,22 +29,14 @@ function saveSettings() {
   try {
     localStorage.setItem(
       SETTINGS_KEY,
-      JSON.stringify({
-        outputDir: state.outputDir,
-        mode: state.mode,
-        brokerId: $("broker-id").value,
-        intuBid: $("intu-bid").value,
-        fiOrg: $("fi-org").value,
-        fiFid: $("fi-fid").value,
-        numericAcctId: $("numeric-acctid").checked,
-      })
+      JSON.stringify({ outputDir: state.outputDir, format: state.format })
     );
   } catch {
     /* ignore */
   }
 }
 
-// ---------- Rendering ----------
+// ---------- Helpers ----------
 function basename(p) {
   return p.split("/").pop();
 }
@@ -59,31 +51,35 @@ function prettyDir(p) {
   return p.replace(/^\/Users\/[^/]+/, "~");
 }
 
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function removeButton(title, onClick) {
+  const btn = el("button", "remove", "×");
+  btn.title = title;
+  btn.setAttribute("aria-label", title);
+  btn.addEventListener("click", onClick);
+  return btn;
+}
+
+// ---------- Input files ----------
 function renderFiles() {
-  const list = $("file-list");
-  list.replaceChildren(
+  $("file-list").replaceChildren(
     ...state.pdfs.map((p) => {
-      const li = document.createElement("li");
-      const badge = document.createElement("span");
-      badge.className = "file-badge";
-      badge.textContent = "PDF";
-      const name = document.createElement("span");
-      name.className = "file-name";
-      name.title = p;
-      name.textContent = basename(p);
-      const dir = document.createElement("span");
-      dir.className = "file-dir";
-      dir.textContent = prettyDir(dirname(p));
-      name.append(dir);
-      const rm = document.createElement("button");
-      rm.className = "remove";
-      rm.title = "Remove";
-      rm.textContent = "×";
-      rm.addEventListener("click", () => {
+      const li = el("li");
+      const name = el("span", "file-name", basename(p));
+      name.title = "Open in Preview";
+      name.append(el("span", "file-dir", prettyDir(dirname(p))));
+      name.addEventListener("click", () => api.openPath(p));
+      const rm = removeButton("Remove", () => {
         state.pdfs = state.pdfs.filter((x) => x !== p);
         renderFiles();
       });
-      li.append(badge, name, rm);
+      li.append(el("span", "file-badge", "PDF"), name, rm);
       return li;
     })
   );
@@ -93,11 +89,11 @@ function renderFiles() {
   updateConvertButton();
 }
 
-function renderMode() {
-  for (const btn of $("mode").querySelectorAll("button")) {
-    btn.setAttribute("aria-checked", String(btn.dataset.mode === state.mode));
+function renderFormat() {
+  for (const btn of $("format").querySelectorAll("button")) {
+    btn.setAttribute("aria-checked", String(btn.dataset.format === state.format));
   }
-  $("mode-help").textContent = MODE_HELP[state.mode];
+  $("format-help").textContent = FORMAT_HELP[state.format];
 }
 
 function renderOutputDir() {
@@ -107,13 +103,79 @@ function renderOutputDir() {
 
 function updateConvertButton() {
   $("convert").disabled = state.pdfs.length === 0 || !state.outputDir;
-  const n = state.pdfs.length;
-  $("status").textContent = n ? "" : "Add confirmation PDFs to get started";
+  $("status").textContent = state.pdfs.length ? "" : "Add confirmation PDFs to get started";
 }
 
 function addPdfs(paths) {
   state.pdfs = [...new Set([...state.pdfs, ...paths])].sort();
   renderFiles();
+}
+
+// ---------- Done list ----------
+const CHECK_SVG =
+  '<svg class="check-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.8"/></svg>';
+
+function renderDoneItem(item) {
+  const li = el("li", "done-item");
+
+  const head = el("div", "done-head");
+  head.insertAdjacentHTML("beforeend", CHECK_SVG);
+  const title = el("div", "done-title");
+  title.append(
+    el("strong", "", item.account),
+    el("span", "muted", `${item.trades} trade${item.trades === 1 ? "" : "s"} · ${item.at}`)
+  );
+  head.append(
+    title,
+    removeButton("Remove from list", () => {
+      state.done = state.done.filter((d) => d.id !== item.id);
+      renderDone();
+    })
+  );
+  li.append(head);
+
+  for (const file of item.files) {
+    const row = el("div", "out-file");
+    const name = el("span", "file-name", basename(file));
+    name.title = file;
+    const reveal = el("button", "secondary small", "Show in Finder");
+    reveal.addEventListener("click", () => api.reveal(file));
+    row.append(el("span", "ext", file.split(".").pop()), name, reveal);
+    li.append(row);
+  }
+
+  const sources = el("div", "sources");
+  sources.append(el("span", "sources-label", item.sources.length === 1 ? "Source PDF" : "Source PDFs"));
+  const chips = el("div", "chips");
+  for (const pdf of item.sources) {
+    const chip = el("button", "pdf-chip");
+    chip.title = `Open ${pdf} in Preview`;
+    chip.append(el("span", "file-badge", "PDF"), el("span", "", basename(pdf)));
+    chip.addEventListener("click", () => api.openPath(pdf));
+    chips.append(chip);
+  }
+  sources.append(chips);
+  li.append(sources);
+  return li;
+}
+
+function renderDone() {
+  $("done-list").replaceChildren(...state.done.map(renderDoneItem));
+  const hasError = !$("error-box").hidden;
+  $("results").hidden = state.done.length === 0 && !hasError;
+  $("clear-results").hidden = state.done.length === 0;
+}
+
+function showError(result) {
+  $("error-box").hidden = false;
+  $("error-text").textContent = result.error || "Something went wrong.";
+  $("log").textContent = (result.stderr || "").trim() || "(no output)";
+  renderDone();
+}
+
+function hideError() {
+  $("error-box").hidden = true;
+  renderDone();
 }
 
 // ---------- Events ----------
@@ -154,11 +216,11 @@ $("clear-files").addEventListener("click", () => {
   renderFiles();
 });
 
-$("mode").addEventListener("click", (e) => {
-  const btn = e.target.closest("button[data-mode]");
+$("format").addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-format]");
   if (!btn) return;
-  state.mode = btn.dataset.mode;
-  renderMode();
+  state.format = btn.dataset.format;
+  renderFormat();
   saveSettings();
 });
 
@@ -172,11 +234,12 @@ $("pick-output").addEventListener("click", async () => {
   }
 });
 
-for (const id of ["broker-id", "intu-bid", "fi-org", "fi-fid", "numeric-acctid"]) {
-  $(id).addEventListener("change", saveSettings);
-}
-
 $("open-output").addEventListener("click", () => api.openPath(state.outputDir));
+$("clear-results").addEventListener("click", () => {
+  state.done = [];
+  renderDone();
+});
+$("dismiss-error").addEventListener("click", hideError);
 
 $("convert").addEventListener("click", async () => {
   const btn = $("convert");
@@ -188,58 +251,25 @@ $("convert").addEventListener("click", async () => {
   const result = await api.convert({
     pdfs: state.pdfs,
     outputDir: state.outputDir,
-    options: {
-      mode: state.mode,
-      brokerId: $("broker-id").value.trim(),
-      intuBid: $("intu-bid").value.trim(),
-      fiOrg: $("fi-org").value.trim(),
-      fiFid: $("fi-fid").value.trim(),
-      numericAcctId: $("numeric-acctid").checked,
-    },
+    format: state.format,
   });
 
   btn.classList.remove("busy");
   btn.querySelector(".label").textContent = "Convert";
   updateConvertButton();
-  showResults(result);
+
+  if (result.ok) {
+    const at = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    const items = result.accounts.map((a) => ({ id: nextDoneId++, at, ...a }));
+    state.done = [...items, ...state.done];
+    $("error-box").hidden = true;
+    renderDone();
+    $("status").textContent = `Converted ${result.trades} trades across ${result.accounts.length} account${result.accounts.length === 1 ? "" : "s"}`;
+  } else {
+    showError(result);
+  }
+  $("results").scrollIntoView({ behavior: "smooth", block: "nearest" });
 });
-
-function showResults(result) {
-  const section = $("results");
-  section.hidden = false;
-  section.classList.toggle("ok", result.ok);
-  section.classList.toggle("err", !result.ok);
-  $("results-title").textContent = result.ok ? "Done" : "Conversion failed";
-  $("results-summary").textContent = result.ok
-    ? result.summary || "Conversion complete."
-    : result.error || "Something went wrong.";
-
-  $("results-list").replaceChildren(
-    ...(result.files || []).map((f) => {
-      const li = document.createElement("li");
-      const ext = document.createElement("span");
-      ext.className = "ext";
-      ext.textContent = f.path.split(".").pop();
-      const name = document.createElement("span");
-      name.className = "file-name";
-      name.title = f.path;
-      name.textContent = basename(f.path);
-      const trades = document.createElement("span");
-      trades.className = "trades";
-      trades.textContent = `${f.trades} trades`;
-      const reveal = document.createElement("button");
-      reveal.className = "secondary";
-      reveal.textContent = "Show in Finder";
-      reveal.addEventListener("click", () => api.reveal(f.path));
-      li.append(ext, name, trades, reveal);
-      return li;
-    })
-  );
-
-  $("log").textContent = [result.stdout, result.stderr].filter(Boolean).join("\n").trim() || "(no output)";
-  $("log-wrap").open = !result.ok;
-  section.scrollIntoView({ behavior: "smooth", block: "nearest" });
-}
 
 // ---------- Updates ----------
 let updateStatus = null;
@@ -301,13 +331,8 @@ api.onUpdateStatus(renderUpdate);
 (async function init() {
   const saved = loadSettings();
   state.outputDir = saved.outputDir || (await api.defaultOutputDir());
-  if (MODE_HELP[saved.mode]) state.mode = saved.mode;
-  $("broker-id").value = saved.brokerId || "";
-  $("intu-bid").value = saved.intuBid || "";
-  $("fi-org").value = saved.fiOrg || "";
-  $("fi-fid").value = saved.fiFid || "";
-  $("numeric-acctid").checked = Boolean(saved.numericAcctId);
-  renderMode();
+  if (FORMAT_HELP[saved.format]) state.format = saved.format;
+  renderFormat();
   renderOutputDir();
   renderFiles();
   renderUpdate(await api.updateStatus());

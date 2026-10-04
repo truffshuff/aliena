@@ -67,13 +67,15 @@
       <section class="card">
         <div class="card-head"><h2>Output</h2></div>
 
-        <div class="segmented" id="mode" role="radiogroup" aria-label="Output format">
-          <button role="radio" data-mode="quicken-investment">Quicken Investment</button>
-          <button role="radio" data-mode="quicken">Quicken</button>
-          <button role="radio" data-mode="ofx-2.3">OFX 2.3</button>
-          <button role="radio" data-mode="ofx-1.0.2">OFX 1.0.2</button>
+        <div class="format-row">
+          <label>Format</label>
+          <div class="segmented" id="format" role="radiogroup" aria-label="Output format">
+            <button role="radio" data-format="qfx">QFX</button>
+            <button role="radio" data-format="ofx">OFX</button>
+            <button role="radio" data-format="both">Both</button>
+          </div>
         </div>
-        <p id="mode-help" class="help"></p>
+        <p id="format-help" class="help"></p>
 
         <div class="row">
           <label>Save to</label>
@@ -82,33 +84,28 @@
             <button id="pick-output" class="secondary">Change…</button>
           </div>
         </div>
-
-        <details class="advanced">
-          <summary>Advanced options</summary>
-          <div class="grid">
-            <label>Broker ID<input id="broker-id" placeholder="drivewealth.com" /></label>
-            <label>INTU.BID<input id="intu-bid" placeholder="(mode default)" /></label>
-            <label>FI / ORG<input id="fi-org" placeholder="(mode default)" /></label>
-            <label>FI / FID<input id="fi-fid" placeholder="(mode default)" /></label>
-          </div>
-          <label class="check">
-            <input type="checkbox" id="numeric-acctid" />
-            Numeric account ID <span class="muted">(always on in Quicken modes)</span>
-          </label>
-        </details>
       </section>
 
       <section id="results" class="card results" hidden>
         <div class="card-head">
-          <h2 id="results-title">Results</h2>
-          <button id="open-output" class="link">Open folder</button>
+          <h2>Done</h2>
+          <div class="head-actions">
+            <button id="open-output" class="link">Open folder</button>
+            <button id="clear-results" class="link">Clear</button>
+          </div>
         </div>
-        <p id="results-summary" class="summary"></p>
-        <ul id="results-list" class="result-list"></ul>
-        <details id="log-wrap" class="log">
-          <summary>Details</summary>
-          <pre id="log"></pre>
-        </details>
+        <div id="error-box" class="error-box" hidden>
+          <div class="error-head">
+            <strong>Conversion failed</strong>
+            <button id="dismiss-error" class="remove" title="Dismiss" aria-label="Dismiss">×</button>
+          </div>
+          <span id="error-text"></span>
+          <details id="error-details" class="log">
+            <summary>Details</summary>
+            <pre id="log"></pre>
+          </details>
+        </div>
+        <ul id="done-list" class="done-list"></ul>
       </section>
     </main>
 

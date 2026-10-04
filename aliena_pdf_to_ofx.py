@@ -2,16 +2,16 @@
 """Convert Aliena/DriveWealth trade confirmation PDFs into OFX investment files.
 
 This script parses transaction confirmation PDFs whose first page includes one or
-more trade rows and emits OFX 1.0.2 investment statement files suitable for
-import into tools such as Quicken.
+more trade rows and emits OFX 1.0.2 investment statement files (as .qfx and/or
+.ofx) using Quicken's investment Web Connect profile.
 """
 
 from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import re
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
@@ -19,6 +19,12 @@ from pathlib import Path
 from typing import Iterable
 
 from pypdf import PdfReader
+
+# Quicken investment Web Connect profile.
+BROKER_ID = "drivewealth.com"
+INTU_BID = "9999"
+FI_ORG = "Intuit"
+FI_FID = "9999"
 
 
 @dataclass
@@ -281,12 +287,6 @@ def make_fitid(trade: Trade, ordinal: int) -> str:
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:24]
 
 
-def append_text(parent: ET.Element, tag: str, value: str) -> ET.Element:
-    node = ET.SubElement(parent, tag)
-    node.text = value
-    return node
-
-
 def safe_sgml_text(value: str) -> str:
     # Avoid malformed SGML tokens in fields like security names and memos.
     return value.replace("&", " and ").replace("<", "(").replace(">", ")")
@@ -300,14 +300,7 @@ def normalize_account_id_for_quicken(account_id: str) -> str:
     return cleaned[-12:] if cleaned else account_id
 
 
-def build_ofx(
-    account_id: str,
-    trades: list[Trade],
-    broker_id: str,
-    intu_bid: str | None = None,
-    fi_org: str | None = None,
-    fi_fid: str | None = None,
-) -> str:
+def build_ofx(account_id: str, trades: list[Trade]) -> str:
     if not trades:
         raise ValueError("No trades provided")
 
@@ -332,10 +325,8 @@ def build_ofx(
         "COMPRESSION:NONE",
         "OLDFILEUID:NONE",
         "NEWFILEUID:NONE",
+        f"INTU.BID:{INTU_BID}",
     ]
-
-    if intu_bid:
-        lines.append(f"INTU.BID:{intu_bid}")
 
     lines.extend(
         [
@@ -349,21 +340,11 @@ def build_ofx(
             "</STATUS>",
             f"<DTSERVER>{now}",
             "<LANGUAGE>ENG",
-        ]
-    )
-
-    if fi_org or fi_fid:
-        lines.append("<FI>")
-        if fi_org:
-            lines.append(f"<ORG>{safe_sgml_text(fi_org)}")
-        if fi_fid:
-            lines.append(f"<FID>{safe_sgml_text(fi_fid)}")
-        lines.append("</FI>")
-    if intu_bid:
-        lines.append(f"<INTU.BID>{safe_sgml_text(intu_bid)}")
-
-    lines.extend(
-        [
+            "<FI>",
+            f"<ORG>{FI_ORG}",
+            f"<FID>{FI_FID}",
+            "</FI>",
+            f"<INTU.BID>{INTU_BID}",
             "</SONRS>",
             "</SIGNONMSGSRSV1>",
             "<INVSTMTMSGSRSV1>",
@@ -377,7 +358,7 @@ def build_ofx(
             "<DTASOF>" + now,
             "<CURDEF>USD",
             "<INVACCTFROM>",
-            f"<BROKERID>{broker_id}",
+            f"<BROKERID>{BROKER_ID}",
             f"<ACCTID>{account_id}",
             "</INVACCTFROM>",
             "<INVTRANLIST>",
@@ -510,148 +491,6 @@ def build_ofx(
     return "\n".join(lines) + "\n"
 
 
-def build_ofx_23_xml(
-    account_id: str,
-    trades: list[Trade],
-    broker_id: str,
-    fi_org: str | None = None,
-    fi_fid: str | None = None,
-) -> str:
-    if not trades:
-        raise ValueError("No trades provided")
-
-    trades_sorted = sorted(trades, key=lambda t: (t.trade_date, t.source_file, t.symbol))
-    dt_start = ofx_date(min(t.trade_date for t in trades_sorted))
-    dt_end = ofx_date(max(t.trade_date for t in trades_sorted))
-    now = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-
-    symbols: dict[str, str] = {}
-    for t in trades_sorted:
-        symbols[t.symbol] = t.security_name
-    positions = summarize_positions(trades_sorted)
-
-    ofx = ET.Element("OFX")
-
-    signon = ET.SubElement(ofx, "SIGNONMSGSRSV1")
-    sonrs_wrap = ET.SubElement(signon, "SONRS")
-    status = ET.SubElement(sonrs_wrap, "STATUS")
-    append_text(status, "CODE", "0")
-    append_text(status, "SEVERITY", "INFO")
-    append_text(sonrs_wrap, "DTSERVER", now)
-    append_text(sonrs_wrap, "LANGUAGE", "ENG")
-    if fi_org or fi_fid:
-        fi = ET.SubElement(sonrs_wrap, "FI")
-        if fi_org:
-            append_text(fi, "ORG", fi_org)
-        if fi_fid:
-            append_text(fi, "FID", fi_fid)
-
-    inv_msgs = ET.SubElement(ofx, "INVSTMTMSGSRSV1")
-    inv_trnrs = ET.SubElement(inv_msgs, "INVSTMTTRNRS")
-    append_text(inv_trnrs, "TRNUID", "1")
-    trn_status = ET.SubElement(inv_trnrs, "STATUS")
-    append_text(trn_status, "CODE", "0")
-    append_text(trn_status, "SEVERITY", "INFO")
-
-    invstmtrs = ET.SubElement(inv_trnrs, "INVSTMTRS")
-    append_text(invstmtrs, "DTASOF", now)
-    append_text(invstmtrs, "CURDEF", "USD")
-
-    invacct = ET.SubElement(invstmtrs, "INVACCTFROM")
-    append_text(invacct, "BROKERID", broker_id)
-    append_text(invacct, "ACCTID", account_id)
-
-    invtranlist = ET.SubElement(invstmtrs, "INVTRANLIST")
-    append_text(invtranlist, "DTSTART", dt_start)
-    append_text(invtranlist, "DTEND", dt_end)
-
-    for idx, t in enumerate(trades_sorted, start=1):
-        txn_node = ET.SubElement(invtranlist, "BUYSTOCK" if t.action == "Buy" else "SELLSTOCK")
-        side = ET.SubElement(txn_node, "INVBUY" if t.action == "Buy" else "INVSELL")
-
-        invtran = ET.SubElement(side, "INVTRAN")
-        append_text(invtran, "FITID", make_fitid(t, idx))
-        append_text(invtran, "DTTRADE", ofx_date(t.trade_date))
-        append_text(invtran, "DTSETTLE", ofx_date(t.settle_date))
-        memo = (
-            f"{t.source_file}; qty={t.quantity}; unit_price={t.unit_price}; principal={t.principal_amount}; "
-            f"net={t.net_amount}; fees={fee_summary(t)}"
-        )
-        append_text(invtran, "MEMO", memo)
-
-        secid = ET.SubElement(side, "SECID")
-        append_text(secid, "UNIQUEID", t.symbol)
-        append_text(secid, "UNIQUEIDTYPE", "TICKER")
-
-        total_places = trade_total_places(t)
-        append_text(side, "UNITS", dec_str(t.quantity))
-        append_text(side, "UNITPRICE", dec_str(t.unit_price))
-        append_text(side, "TOTAL", dec_str(calc_total_for_ofx(t, separate_sell_expenses=True), total_places))
-        append_text(side, "SUBACCTSEC", "CASH")
-        append_text(side, "SUBACCTFUND", "CASH")
-        append_text(side, "COMMISSION", dec_str(Decimal("0") if t.action == "Sell" else abs(t.commission), 2))
-        append_text(side, "FEES", dec_str(Decimal("0") if t.action == "Sell" else fee_total(t), 2))
-        append_text(txn_node, "BUYTYPE" if t.action == "Buy" else "SELLTYPE", t.action.upper())
-
-        if t.action == "Sell":
-            for fee_index, fee in enumerate(trade_fee_lines(t), start=1):
-                expense = ET.SubElement(invtranlist, "INVEXPENSE")
-                invtran_fee = ET.SubElement(expense, "INVTRAN")
-                append_text(invtran_fee, "FITID", make_fee_fitid(t, idx, fee_index, fee))
-                append_text(invtran_fee, "DTTRADE", ofx_date(t.trade_date))
-                append_text(invtran_fee, "DTSETTLE", ofx_date(t.settle_date))
-                append_text(invtran_fee, "MEMO", fee_memo(t, fee))
-
-                secid_fee = ET.SubElement(expense, "SECID")
-                append_text(secid_fee, "UNIQUEID", t.symbol)
-                append_text(secid_fee, "UNIQUEIDTYPE", "TICKER")
-
-                append_text(expense, "TOTAL", dec_str(-abs(fee.amount), 2))
-                append_text(expense, "SUBACCTSEC", "CASH")
-                append_text(expense, "SUBACCTFUND", "CASH")
-
-    invposlist = ET.SubElement(invstmtrs, "INVPOSLIST")
-    for symbol, (units, unit_price) in sorted(positions.items()):
-        if units == 0:
-            continue
-        pos_type = "LONG" if units > 0 else "SHORT"
-        abs_units = abs(units)
-        posstock = ET.SubElement(invposlist, "POSSTOCK")
-        invpos = ET.SubElement(posstock, "INVPOS")
-        secid = ET.SubElement(invpos, "SECID")
-        append_text(secid, "UNIQUEID", symbol)
-        append_text(secid, "UNIQUEIDTYPE", "TICKER")
-        append_text(invpos, "HELDINACCT", "CASH")
-        append_text(invpos, "POSTYPE", pos_type)
-        append_text(invpos, "UNITS", dec_str(abs_units))
-        append_text(invpos, "UNITPRICE", dec_str(unit_price))
-        append_text(invpos, "MKTVAL", dec_str(abs_units * unit_price, 2))
-        append_text(invpos, "DTPRICEASOF", dt_end)
-
-    invbal = ET.SubElement(invstmtrs, "INVBAL")
-    append_text(invbal, "AVAILCASH", "0")
-    append_text(invbal, "MARGINBALANCE", "0")
-    append_text(invbal, "SHORTBALANCE", "0")
-
-    seclist_msgs = ET.SubElement(ofx, "SECLISTMSGSRSV1")
-    seclist = ET.SubElement(seclist_msgs, "SECLIST")
-    for symbol, sec_name in sorted(symbols.items()):
-        stockinfo = ET.SubElement(seclist, "STOCKINFO")
-        secinfo = ET.SubElement(stockinfo, "SECINFO")
-        secid = ET.SubElement(secinfo, "SECID")
-        append_text(secid, "UNIQUEID", symbol)
-        append_text(secid, "UNIQUEIDTYPE", "TICKER")
-        append_text(secinfo, "SECNAME", symbol)
-        append_text(secinfo, "MEMO", sec_name)
-        append_text(secinfo, "TICKER", symbol)
-
-    ET.indent(ofx, space="  ")
-    xml_body = ET.tostring(ofx, encoding="unicode")
-    xml_decl = '<?xml version="1.0" encoding="UTF-8"?>\n'
-    ofx_pi = '<?OFX OFXHEADER="200" VERSION="203" SECURITY="NONE" OLDFILEUID="NONE" NEWFILEUID="NONE"?>\n'
-    return xml_decl + ofx_pi + xml_body + "\n"
-
-
 def group_by_account(trades: Iterable[Trade]) -> dict[str, list[Trade]]:
     grouped: dict[str, list[Trade]] = {}
     for t in trades:
@@ -665,7 +504,7 @@ def sanitize_account_for_filename(account_id: str) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Convert Aliena confirmation PDFs to OFX investment files"
+        description="Convert Aliena confirmation PDFs to Quicken investment files (QFX/OFX)"
     )
     parser.add_argument(
         "pdfs",
@@ -674,66 +513,19 @@ def main() -> int:
     )
     parser.add_argument("--input-dir", default=".", help="Directory containing PDF files")
     parser.add_argument("--glob", default="Confirm_*.pdf", help="Glob pattern for PDFs")
-    parser.add_argument("--output-dir", default="ofx_output", help="Output folder for OFX files")
+    parser.add_argument("--output-dir", default="ofx_output", help="Output folder")
     parser.add_argument(
-        "--broker-id",
-        default="drivewealth.com",
-        help="OFX BROKERID value (default: drivewealth.com)",
+        "--format",
+        choices=["qfx", "ofx", "both"],
+        default="qfx",
+        help="Which file type(s) to write per account (default: qfx)",
     )
     parser.add_argument(
-        "--ofx-version",
-        choices=["1.0.2", "2.3"],
-        default="2.3",
-        help="Output OFX dialect: 2.3 XML or 1.0.2 SGML (default: 2.3)",
-    )
-    parser.add_argument(
-        "--intu-bid",
-        default="",
-        help="Optional Intuit BID header for Quicken/QFX compatibility",
-    )
-    parser.add_argument(
-        "--quicken-mode",
+        "--json",
         action="store_true",
-        help="Force Quicken-friendly output: OFX 1.0.2 + .qfx copy (no INTU.BID unless provided)",
-    )
-    parser.add_argument(
-        "--quicken-investment-mode",
-        action="store_true",
-        help="Force Quicken investment profile: OFX 1.0.2 + .qfx + BID/FI preset for investment service",
-    )
-    parser.add_argument(
-        "--fi-org",
-        default="",
-        help="Optional FI/ORG value for SONRS metadata",
-    )
-    parser.add_argument(
-        "--fi-fid",
-        default="",
-        help="Optional FI/FID value for SONRS metadata",
-    )
-    parser.add_argument(
-        "--numeric-acctid",
-        action="store_true",
-        help="Normalize ACCTID to mostly numeric form (recommended for Quicken)",
+        help="Print a JSON summary instead of text (used by the desktop app)",
     )
     args = parser.parse_args()
-
-    if args.quicken_mode or args.quicken_investment_mode:
-        args.quicken_mode = True
-        args.ofx_version = "1.0.2"
-        args.numeric_acctid = True
-        if args.quicken_investment_mode:
-            if not args.intu_bid:
-                args.intu_bid = "9999"
-            if not args.fi_org:
-                args.fi_org = "Intuit"
-            if not args.fi_fid:
-                args.fi_fid = "9999"
-        else:
-            if not args.fi_org:
-                args.fi_org = "DriveWealth"
-            if not args.fi_fid:
-                args.fi_fid = "00000"
 
     if args.pdfs:
         pdf_paths = sorted(Path(p) for p in args.pdfs)
@@ -747,8 +539,12 @@ def main() -> int:
             raise SystemExit(f"No PDFs found matching {args.glob} in {input_dir}")
 
     all_trades: list[Trade] = []
+    sources: dict[str, set[Path]] = {}
     for pdf_path in pdf_paths:
-        all_trades.extend(parse_trades_from_pdf(pdf_path))
+        trades = parse_trades_from_pdf(pdf_path)
+        all_trades.extend(trades)
+        for t in trades:
+            sources.setdefault(t.account_id, set()).add(pdf_path.resolve())
 
     if not all_trades:
         raise SystemExit("No trades parsed from PDFs")
@@ -757,38 +553,32 @@ def main() -> int:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    extensions = ["qfx", "ofx"] if args.format == "both" else [args.format]
 
+    accounts = []
     for account_id, trades in sorted(grouped.items()):
-        acctid_out = normalize_account_id_for_quicken(account_id) if args.numeric_acctid else account_id
+        ofx_text = build_ofx(normalize_account_id_for_quicken(account_id), trades)
         base_name = sanitize_account_for_filename(account_id)
+        files = []
+        for ext in extensions:
+            output_file = output_dir / f"{base_name}_{run_timestamp}.{ext}"
+            output_file.write_text(ofx_text, encoding="ascii", errors="ignore")
+            files.append(str(output_file.resolve()))
+            if not args.json:
+                print(f"Wrote {output_file} ({len(trades)} trades)")
+        accounts.append(
+            {
+                "account": account_id,
+                "trades": len(trades),
+                "files": files,
+                "sources": [str(p) for p in sorted(sources[account_id])],
+            }
+        )
 
-        if args.ofx_version == "2.3":
-            ofx_text = build_ofx_23_xml(
-                acctid_out,
-                trades,
-                args.broker_id,
-                args.fi_org or None,
-                args.fi_fid or None,
-            )
-        else:
-            ofx_text = build_ofx(
-                acctid_out,
-                trades,
-                args.broker_id,
-                args.intu_bid or None,
-                args.fi_org or None,
-                args.fi_fid or None,
-            )
-        output_file = output_dir / f"{base_name}_{run_timestamp}.ofx"
-        encoding = "utf-8" if args.ofx_version == "2.3" else "ascii"
-        output_file.write_text(ofx_text, encoding=encoding, errors="ignore")
-        if args.quicken_mode:
-            qfx_file = output_dir / f"{base_name}_{run_timestamp}.qfx"
-            qfx_file.write_text(ofx_text, encoding=encoding, errors="ignore")
-            print(f"Wrote {qfx_file} ({len(trades)} trades)")
-        print(f"Wrote {output_file} ({len(trades)} trades)")
-
-    print(f"Parsed {len(all_trades)} trades across {len(grouped)} account(s).")
+    if args.json:
+        print(json.dumps({"trades": len(all_trades), "accounts": accounts}))
+    else:
+        print(f"Parsed {len(all_trades)} trades across {len(grouped)} account(s).")
     return 0
 
 
